@@ -1,0 +1,9 @@
+{
+  "run_id": "region59-ssp2-rcpref",
+  "scenarios": [
+    {
+      "ssp": "ssp2",
+      "rcp": "rcpref"
+    }
+  ]
+}
