@@ -1,6 +1,11 @@
 {
-  "run_id": "region59-ssp2-rcpref",
+  "run_id": "chubi-local-pipeline-test",
   "scenarios": [
+    {
+      "ssp": "ssp1",
+      "rcp": "rcpref"
+    },
+
     {
       "ssp": "ssp2",
       "rcp": "rcpref"
