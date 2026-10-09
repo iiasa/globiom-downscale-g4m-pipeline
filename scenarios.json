@@ -1,14 +1,7 @@
 {
   "run_id": "chubi-local-pipeline-test",
   "scenarios": [
-    {
-      "ssp": "ssp1",
-      "rcp": "rcpref"
-    },
-
-    {
-      "ssp": "ssp2",
-      "rcp": "rcpref"
-    }
+    {"nsim": 0},
+    {"nsim": 8}
   ]
 }

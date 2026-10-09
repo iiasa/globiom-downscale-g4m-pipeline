@@ -1,23 +1,29 @@
-"""Dispatch one complete GLOBIOM–G4M chain for each configured scenario."""
+"""Dispatch the local GLOBIOM–downscale–G4M pipeline by Model nsim."""
 
 import importlib.util
-import json
+import subprocess
 from pathlib import Path
 
 from accli import WKubeTask
 
-
 ROOT = Path(__file__).resolve().parent
-SCENARIO_MODULE = ROOT.parent / "globiom-region59" / "scenarios.py"
 
 
 def load_source(folder):
-    path = ROOT.parent / folder / "wkube.py"
+    directory = ROOT / folder
+    branch = subprocess.run(
+        ["git", "-C", str(directory), "branch", "--show-current"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if branch != "wkube":
+        raise ValueError(f"{directory} must be on branch wkube, found {branch!r}")
     spec = importlib.util.spec_from_file_location(
-        f"source_{folder.replace('-', '_')}", path
+        f"source_{folder.replace('-', '_')}", directory / "wkube.py"
     )
     if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot load routine: {path}")
+        raise ImportError(f"Cannot load routine: {directory}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -26,164 +32,54 @@ def load_source(folder):
 region59_flow = load_source("globiom-region59")
 downscaler_flow = load_source("downscaler")
 downscale_merger_flow = load_source("downscale-merger")
-collector_flow = load_source("globiom-region59-g4m-collector")
 g4m_flow = load_source("g4m")
 g4m_merger_flow = load_source("g4m-input-merger")
 reporter_flow = load_source("globiom-g4m-reporter")
 
 
-def load_scenarios():
-    with (ROOT / "scenarios.json").open(encoding="utf-8") as config_file:
-        config = json.load(config_file)
-    default_run_id = config.get("run_id")
-    rows = config.get("scenarios")
-
-    spec = importlib.util.spec_from_file_location("globiom_scenarios", SCENARIO_MODULE)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot load scenario definitions: {SCENARIO_MODULE}")
-    scenario_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(scenario_module)
-
-    scenarios = []
-    for row in rows:
-        row_run_id = row.get("run_id", default_run_id)
-        ssp_input, rcp_input = row["ssp"], row["rcp"]
-        rcp_labels = {
-            label.lower(): key
-            for key, label in scenario_module.DOWNSCALING_SCEN3.items()
-        }
-        rcp_key = rcp_labels.get(rcp_input.lower(), rcp_input)
-        ssp, rcp, nsim = scenario_module.resolve_scenario(ssp_input, rcp_key)
-
-        carbon_price = row.get("co2_price", 0)
-        restart_file = row.get("restart_file", "")
-        scenarios.append(
-            (
-                row_run_id,
-                ssp.upper(),
-                scenario_module.DOWNSCALING_SCEN3[rcp],
-                nsim,
-                carbon_price,
-                restart_file,
-            )
-        )
-    return scenarios
-
-
-def build_scenario(run_id, ssp, rcp, nsim, carbon_price, restart_file):
-    scenario_root = f"/mnt/wdrv/globiom-results/{run_id}/scenarios/{ssp}_{rcp}"
-    dims = {"RUN_ID": run_id, "SSP": ssp, "RCP": rcp}
-
-    region59 = region59_flow.build_task(
-        f"GLOBIOM REGION59 {ssp} {rcp}",
-        {
-            **dims,
-            "NSIM": str(nsim),
-            "GAMS_LICENSE_FILE": "/mnt/wdrv/gamslice.txt",
-            "GLOBIOM_A6_RESTART": restart_file,
-            "output_mappings": (
-                f"/tmp/o/:{scenario_root}/;"
-                f"/code/Model/output/:{scenario_root}/output/;"
-                f"/code/Model/gdx/:{scenario_root}/gdx/;"
-                f"/code/Model/restarts/:{scenario_root}/restarts/"
-            ),
-        },
+def build_scenario(nsim, carbon_price):
+    conf = {"NSIM": str(nsim)}
+    region59 = region59_flow.build_task(f"GLOBIOM REGION59 nsim {nsim}", conf)
+    downscale_jobs = WKubeTask(
+        name=f"Downscaling nsim {nsim}",
     )
-
-    branches = WKubeTask(name=f"Downscaling {ssp} {rcp}")
     for region in downscaler_flow.REGION59:
-        branches.add_child(
+        downscale_jobs.add_child(
             downscaler_flow.build_task(
-                f"DownscaleR {ssp} {rcp} {region}",
-                {
-                    **dims,
-                    "REGION": region,
-                    "input_mappings": f"{scenario_root}/gdx/output.gdx:/tmp/input/input.gdx",
-                    "output_mappings": f"/tmp/output/:{scenario_root}/downscaled/",
-                },
+                f"DownscaleR nsim {nsim} {region}", {**conf, "REGION": region}
             )
         )
-    region59.add_callback(branches)
+    region59.add_callback(downscale_jobs)
     downscale_merger = downscale_merger_flow.build_task(
-        f"DownscaleR merger {ssp} {rcp}",
-        {
-            **dims,
-            "input_mappings": f"{scenario_root}/downscaled/:/tmp/input/",
-            "output_mappings": f"/tmp/output/:{scenario_root}/downscaled/merged/",
-        },
+        f"DownscaleR merger nsim {nsim}", conf
     )
-    branches.add_callback(downscale_merger)
-
-    collector = collector_flow.build_task(
-        f"GLOBIOM G4M input collector {ssp} {rcp}",
-        {
-            **dims,
-            "GAMS_LICENSE_FILE": "/mnt/wdrv/gamslice.txt",
-            "input_mappings": f"{scenario_root}/gdx/output.gdx:/code/Model/input.gdx",
-            "output_mappings": (
-                f"/code/Model/gdx/:{scenario_root}/globiom-g4m-inputs/gdx/;"
-                f"/code/Model/output/g4m/:{scenario_root}/globiom-g4m-inputs/csvs/;"
-                f"/code/Model/logs/:{scenario_root}/globiom-g4m-inputs/logs/"
-            ),
-        },
-    )
-    downscale_merger.add_callback(collector)
-
+    downscale_jobs.add_callback(downscale_merger)
     g4m = g4m_flow.build_task(
-        f"G4M {ssp} {rcp}",
-        {
-            **dims,
-            "CARBON_PRICE": str(carbon_price),
-            "input_mappings": (
-                f"{scenario_root}/globiom-g4m-inputs/csvs/:/code/globiom-inputs/;"
-                f"{scenario_root}/downscaled/merged/:/code/downscaled-inputs/"
-            ),
-            "output_mappings": f"/code/out/:{scenario_root}/g4m-results/",
-        },
+        f"G4M nsim {nsim}", {**conf, "CARBON_PRICE": str(carbon_price)}
     )
-    collector.add_callback(g4m)
-
+    downscale_merger.add_callback(g4m)
     g4m_merger = g4m_merger_flow.build_task(
-        f"G4M input merger {ssp} {rcp}",
-        {
-            **dims,
-            "CARBON_PRICE": str(carbon_price),
-            "input_mappings": f"{scenario_root}/g4m-results/:/mnt/tmp/i/",
-            "output_mappings": f"/mnt/tmp/o/:{scenario_root}/g4m-results/merged/",
-        },
+        f"G4M feedback nsim {nsim}", {**conf, "CARBON_PRICE": str(carbon_price)}
     )
     g4m.add_callback(g4m_merger)
     return region59
 
 
-scenarios = load_scenarios()
-globiom_full = WKubeTask(name="GLOBIOM–G4M- Local Pipeline")
-for run_id, ssp, rcp, nsim, carbon_price, restart_file in scenarios:
-    globiom_full.add_child(
-        build_scenario(run_id, ssp, rcp, nsim, carbon_price, restart_file)
-    )
-
-run_id = scenarios[0][0]
-base_ssp, base_rcp = reporter_flow.load_config()
-shared_root = f"/mnt/wdrv/globiom-results/{run_id}"
+run_id = "GLOBIOM-G4M-PIPELINE LOCAL RUN"
+# scenarios = [(0, 0), (8, 0)]
+scenarios = [(8, 0)]
+baseline_nsim = 0
+globiom_full = WKubeTask(
+    name="GLOBIOM–G4M Local Pipeline test Trunk59 without collector 2 (downscale waiter)",
+)
+for nsim, carbon_price in scenarios:
+    globiom_full.add_child(build_scenario(nsim, carbon_price))
 globiom_full.add_callback(
     reporter_flow.build_task(
         f"GLOBIOM G4M report: {run_id}",
         {
-            "RUN_ID": run_id,
-            "BASE_SSP": base_ssp,
-            "BASE_RCP": base_rcp,
-            "GAMS_LICENSE_FILE": "/mnt/tmp/.local/share/GAMS/gamslice.txt",
-            "REPORT_INPUT_ROOT": "/mnt/tmp/i",
-            "REPORT_OUTPUT_ROOT": "/mnt/tmp/o",
-            "input_mappings": (
-                f"{shared_root}/scenarios/:/mnt/tmp/i/;"
-                "/mnt/wdrv/gamslice.txt:/mnt/tmp/.local/share/GAMS/gamslice.txt"
-            ),
-            "output_mappings": (
-                f"/mnt/tmp/o/:{shared_root}/merged/;"
-                f"{shared_root}/merged/:acc://globiom-results/{run_id}/merged/"
-            ),
+            "BASELINE_NSIM": str(baseline_nsim),
+            "GAMS_LICENSE_FILE": "/mnt/wdrv/gamslice.txt",
         },
     )
 )
