@@ -18,6 +18,7 @@ Read these files before you write `wkube.py`:
 - [references/stacks-and-cost.md](references/stacks-and-cost.md)
 - [references/gams-image.md](references/gams-image.md)
 - [references/wkube-template.py](references/wkube-template.py)
+- [references/monitor.md](references/monitor.md)
 
 Fetch and read https://accelerator.iiasa.ac.at/docs/routine-jobflow before you write a jobflow. Use that page for the holder task, `add_child`, `add_callback`, and dispatch. The examples on that page use `PYTHON3_7`. Do not copy that stack. The GLOBIOM stack and filter rules in this skill override those examples.
 
@@ -160,6 +161,17 @@ Show the user this summary before dispatch:
 
 If the list has more than four scenarios, state that the jobs can run in parallel and that each job uses one shared GAMS seat. Wait for confirmation.
 
+## First run
+
+If this `wkube.py` has not yet produced a GLOBIOM job that writes its mapped outputs, say so before dispatch. Tell the user all of this:
+
+- The first dispatch is one test scenario, not the full list.
+- You will watch that job with `accli jobs`, `accli job`, and `accli logs`.
+- You are checking for image build errors and scaffolding errors.
+- After that job writes its mapped outputs, you will keep `wkube.py` stable.
+
+Ask which one `nsim` to use for the test when they named more than one. Do not dispatch the other scenarios until the test job builds and writes its mapped outputs.
+
 Run the command from the model root:
 
 ```bash
@@ -168,4 +180,16 @@ accli dispatch PROJECT_SLUG globiom
 
 Replace `PROJECT_SLUG` with the confirmed slug. Do not add `-f`.
 
-Then give the user the printed job id. `accli` has no logs command. The user reads status and logs in the web UI at `https://accelerator.iiasa.ac.at/projects/PROJECT_SLUG`.
+Then follow [references/monitor.md](references/monitor.md).
+
+1. Run `accli job PROJECT_SLUG ROOT_JOB_ID` and read the child id. The dispatch id is the holder. It does not contain the GAMS log.
+2. Run `accli logs PROJECT_SLUG CHILD_JOB_ID --follow`.
+3. If the child never starts, read the holder log with `--source celery` and `--source podevents`.
+
+Read the log for a failed image build, a missing file, a license error, or a missing `gams` command. If you find one, tell the user the cause and the change you propose. Dispatch the test again only after they confirm that change.
+
+Do not call the test reliable because the holder status is `DONE`. The child must finish, and the mapped result path must contain the output. Use `accli jobs PROJECT_SLUG --status done` to confirm the graph, then check that path.
+
+When the test job writes the mapped outputs, tell the user the result path. After that, this `wkube.py` is stable. Do not rewrite the command, stack, mappings, or filters for a later scenario unless the user asks, or a later run shows that the file is wrong.
+
+If this `wkube.py` already produced mapped outputs, do not run another test scenario. Dispatch the confirmed list. Keep the stable file. Change it only for the reason above.
