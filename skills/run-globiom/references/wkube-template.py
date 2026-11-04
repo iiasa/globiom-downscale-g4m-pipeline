@@ -5,26 +5,27 @@ from accli import WKubeTask
 MODEL_ROOT = Path(__file__).resolve().parent
 
 # License file is in the model root. The container path is /code/<filename>.
+# execute_abort children do not inherit license=. They open the image file
+# /opt/gams/gams52.5_linux_x64_64_sfx/gamslice.txt. The job user cannot replace
+# that file. extra_parameters puts the user license on %env% for every child.
 LICENSE = "/code/gamslice.txt"
 GAMS_ARGS = (
-    f"lo=3 license={LICENSE} errMsg=1 PC=2 PS=0 PW=32767 checkErrorLevel=1"
+    f"lo=3 license={LICENSE} errMsg=1 PC=2 PS=0 PW=32767 checkErrorLevel=1 "
+    f"//extra_parameters=license={LICENSE}"
 )
 
 # Replace ENTRY with the file the user chose:
 # their 0_executebatch.gms or 0_execute_batch.gms, 6_scenarios.gms, or 7_output.gms.
 # Step 7 alone needs the restart file they named.
 ENTRY = "6_scenarios.gms"
+# Do not copy outputs to /code/results. Read Model/ and map the directories
+# the entry writes. See SKILL.md, "Map the results".
 COMMAND = "\n".join(
     [
         "set -eu",
-        'mkdir -p "/code/results/${NSIM}" Model/gdx',
+        "mkdir -p Model/gdx",
         "cd Model",
-        (
-            f"gams {ENTRY} {GAMS_ARGS} "
-            'o="/code/results/${NSIM}/${ENTRY%.gms}.lst" '
-            '//nsim="$NSIM"'
-        ),
-        'cp -a gdx/. "/code/results/${NSIM}/" || true',
+        f"gams {ENTRY} {GAMS_ARGS} //nsim=\"$NSIM\"",
     ]
 )
 
@@ -49,9 +50,10 @@ def build_task(nsim: int) -> WKubeTask:
         build_timeout=2 * 60 * 60,
         conf={
             "NSIM": str(nsim),
+            # Replace the left side with a directory you read from Model/.
             "output_mappings": (
-                f"/code/results/{nsim}/:"
-                f"acc://globiom-scenario/globiom-results/RUN_LABEL/{nsim}/"
+                "/code/Model/REPLACE_AFTER_READING_MODEL/:"
+                f"/mnt/wdrv/globiom-results/RUN_LABEL/{nsim}/REPLACE_AFTER_READING_MODEL/"
             ),
         },
     )

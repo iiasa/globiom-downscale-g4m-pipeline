@@ -9,7 +9,7 @@ Ask for:
 
 Put the license file in the model root. That directory is `job_folder`. Do not exclude it. Do not print it.
 
-The platform copies the filtered model root to `/code`. The command must use `license=/code/<filename>`. Check that this path matches the file name in the model root before dispatch.
+The platform copies the filtered model root to `/code`. The command must use `license=/code/<filename>` and `//extra_parameters=license=/code/<filename>`. Check that this path matches the file name in the model root before dispatch. `execute_abort` children do not inherit `license=`. They open the image `gamslice.txt`. The job user cannot replace that file.
 
 `Model/t/a4_r1.g00` was saved by GAMS 52.5. If they open that restart, warn them when the version is not 52.5. Let them keep the version they named.
 

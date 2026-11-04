@@ -52,4 +52,12 @@ To include one required file, add its relative path to `include`. Do not delete 
 
 If the user chooses a different restart file, include that file. Use a GAMS version that can open that file. Do not search for another checkpoint and switch to it.
 
-Take initiative to include/exclude files so that the job dispatch is not unncessarily large. Always confirm with the user however.
+## Make the bundle smaller
+
+Look through the model root before you write `exclude`. The required patterns above are the start, not the whole list. Propose more excludes for directories the chosen GAMS entry does not open.
+
+Look for backups, old outputs, logs, editor files, `.venv`, caches, and other large trees. Name each proposed pattern and why it is safe to omit.
+
+Show that list to the user. Wait for them to accept or reject each pattern. Do not add a pattern they did not accept. Do not remove a required pattern to make the bundle smaller.
+
+Do not exclude the license file, the chosen entry file, `Model/cplex.opt`, or a restart file the command opens. If a proposed exclude would hide a file the user edited, say so and leave that file in the upload.

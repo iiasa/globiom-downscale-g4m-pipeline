@@ -87,7 +87,7 @@ Ask whether the user wants the base stack or their own GAMS version.
 - Base stack: use `base_stack="GAMS52_5__R4_6"`. Do not substitute another stack. Read [references/stacks-and-cost.md](references/stacks-and-cost.md).
 - Own version: do not set `base_stack`. Set `docker_filename="Dockerfile"`. Guide the user through the image in [references/gams-image.md](references/gams-image.md). Use the GAMS version they name.
 
-In both cases, keep their license file in the model root. That directory is `job_folder`. The container then has the file at `/code/<filename>`. Point every `gams` command at that path with `license=/code/<filename>`. Do not exclude the license file. Do not print it. Do not point the command at `/mnt/wdrv/gamslice.txt` unless that is the file they named and it is also copied into the model root.
+In both cases, keep their license file in the model root. That directory is `job_folder`. The container then has the file at `/code/<filename>`. Point the parent `gams` command at that path with `license=/code/<filename>`. Also pass `//extra_parameters=license=/code/<filename>`. `execute_abort` children do not inherit `license=`. They open `/opt/gams/gams52.5_linux_x64_64_sfx/gamslice.txt`, the image license. The job user cannot replace that file. `%env%` in `include/environment.gms` appends `extra_parameters`, so the child command gets the user license. Do not exclude the license file. Do not print it. Do not point the command at `/mnt/wdrv/gamslice.txt` unless that is the file they named and it is also copied into the model root.
 
 If the license file is not in the model root, ask the user to put it there. Stop until the file is there.
 
@@ -104,17 +104,28 @@ Use the file they choose. If they choose step 7 alone, ask which restart file to
 
 ## Map the results
 
-Write the job outputs under `/code/results/<nsim>/`. Map that directory to the project space. Both paths in a folder mapping end with `/`.
+Do not invent an output directory. Read `Model/` before you set `output_mappings`.
+
+1. Open the entry file the user chose.
+2. Follow every uncommented `execute` or `execute_abort` into the stage file it runs. Also open the includes that write files, such as `7_output.gms` and `8_merge_output.gms` when that stage runs.
+3. Record each path the stage writes. Look for `-s`, `gdx=`, `outpath`, `output_name`, `put`, and `EXECUTE_UNLOAD`.
+4. The command runs from `Model/`. A relative path in those files is `/code/Model/<path>` in the container.
+5. Map each written directory to `/mnt/wdrv/globiom-results/RUN_LABEL/<nsim>/` and keep the same relative directory. Both sides of a folder mapping end with `/`. Separate mappings with `;`.
+6. Do not copy outputs into `/code/results` and map that copy. Do not use `acc://` in `output_mappings`. An `acc://` mapping only stores the job-output location. The user browses `/mnt/wdrv`.
+7. In the summary before dispatch, list each path you found and the mapping for it. If you cannot name a written path, say so. Do not guess a folder.
+
+The left side below is an example shape. Replace it with a path you read from `Model/`. Do not keep it if the model does not write that path.
 
 ```python
-"output_mappings": "/code/results/8/:acc://globiom-scenario/globiom-results/RUN_LABEL/8/"
+"output_mappings": "/code/Model/gdx/:/mnt/wdrv/globiom-results/RUN_LABEL/8/gdx/"
 ```
 
-Replace the project slug, run label, and `nsim` with the confirmed values. Use a literal path. Do not expect `${ROOT_JOB_ID}` to expand inside `output_mappings`.
+Replace the run label and `nsim` with the confirmed values. Use a literal path. Do not expect `${ROOT_JOB_ID}` to expand inside `output_mappings`.
 
 Before dispatch, tell the user where to open the results:
 
 - Web UI: `https://accelerator.iiasa.ac.at/projects/PROJECT_SLUG`, then `globiom-results/RUN_LABEL/<nsim>/`
+- In a job: `/mnt/wdrv/globiom-results/RUN_LABEL/<nsim>/`
 - Copy: `accli copy acc://PROJECT_SLUG/globiom-results/RUN_LABEL/<nsim>/ ./results/`
 
 ## Write wkube.py
@@ -123,12 +134,12 @@ Start from [references/wkube-template.py](references/wkube-template.py).
 
 - Put the file in the model root.
 - Set `job_folder` to the directory that contains `wkube.py`.
-- Keep the include and exclude strings from the template.
+- Start from the include and exclude strings in the template. Then look for more directories that the solve does not need. Propose those extra excludes before you write them. Wait for the user to accept or reject each one. Do not dispatch a filter the user has not confirmed.
 - Create one child task for each confirmed `nsim`. Pass that integer as `NSIM`.
 - The root variable must be named `globiom`. The dispatch command uses that name.
 - The holder is `WKubeTask()` with no arguments, as the jobflow page requires. `add_child` works only on that holder.
 - Keep the resource values in the template unless the user asks to change them.
-- Set `output_mappings` on every child. The command must write into the container path that the mapping reads.
+- Set `output_mappings` on every child from the paths you read in `Model/`. Map those directories. Do not copy them to another folder first.
 
 Do not import `wkube.py` to test it. The import uploads the tree.
 
@@ -143,6 +154,7 @@ Show the user this summary before dispatch:
 - `nsim` list
 - result path in the project space
 - files they edited, and whether each file is uploaded
+- exclude patterns, including any extra directories they accepted
 - project slug
 - one line that each scenario requests 1 core, 24 GiB of memory, and 12 GiB of local disk
 
