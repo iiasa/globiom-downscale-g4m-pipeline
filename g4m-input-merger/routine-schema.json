@@ -1,0 +1,18 @@
+{
+  "root": {
+    "type": "object",
+    "required": ["NSIM", "CARBON_PRICE"],
+    "properties": {
+      "NSIM": {
+        "type": "string",
+        "title": "Model nsim",
+        "pattern": "^(0|[1-9][0-9]*)$"
+      },
+      "CARBON_PRICE": {
+        "type": "string",
+        "title": "Carbon price",
+        "pattern": "^-?[0-9]+$"
+      }
+    }
+  }
+}

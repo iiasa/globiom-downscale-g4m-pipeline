@@ -1,0 +1,23 @@
+{
+  "root": {
+    "type": "object",
+    "required": ["BASELINE_NSIM", "G4M_RESULTS_PATH"],
+    "properties": {
+      "BASELINE_NSIM": {
+        "type": "string",
+        "title": "Baseline Model nsim",
+        "pattern": "^(0|[1-9][0-9]*)$"
+      },
+      "G4M_RESULTS_PATH": {
+        "type": "string",
+        "title": "G4M results path",
+        "minLength": 1
+      },
+      "GAMS_LICENSE_FILE": {
+        "type": "string",
+        "title": "GAMS license file",
+        "default": "/mnt/wdrv/gamslice.txt"
+      }
+    }
+  }
+}

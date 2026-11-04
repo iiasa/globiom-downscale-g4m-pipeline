@@ -1,0 +1,7 @@
+.git
+__pycache__
+*.pyc
+merge.json
+wkube.py
+README.md
+routine-schema.json

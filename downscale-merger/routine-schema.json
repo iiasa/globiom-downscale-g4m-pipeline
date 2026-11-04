@@ -1,0 +1,9 @@
+{
+  "root": {
+    "type": "object",
+    "required": ["NSIM"],
+    "properties": {
+      "NSIM": {"type": "string", "title": "Model nsim", "pattern": "^(0|[1-9][0-9]*)$"}
+    }
+  }
+}
