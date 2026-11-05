@@ -26,7 +26,7 @@ An empty match does not raise an error. A wrong `include` pattern omits the rest
 ## Required GLOBIOM filter
 
 ```python
-exclude="Data/*,Model.bk/*,Model/t/*,Model/gdx/*,.venv/*,.svn/*,.git/*,wkube.py"
+exclude="Data/*,Model.bk/*,Model/t/*,Model/gdx/*,Model/output/*,temp/*,.venv/*,.svn/*,.git/*,wkube.py"
 include="Model/t/a4_r1.g00"
 ```
 
@@ -37,12 +37,36 @@ Keep every pattern. Use the same pair on every child task. The upload is cached 
 | `Data/*`                      | The data tree is large. The restart file already contains stages 1–4. Do not upload `Data/` to fix a missing file. |
 | `Model/t/*`                   | Other checkpoints are large. The job needs one restart file.                                                       |
 | `Model/gdx/*`                 | Solver output, not source. The job creates a new `Model/gdx` in the container.                                     |
-| `.venv/*`, `.svn/*`, `.git/*` | Local tool files. `.git` is also skipped by name.                                                                  |
+| `Model/output/*`              | Existing scenario results from local runs. Do not upload previous outputs.                                         |
+| `temp/*`                      | Temporary scratch files.                                                                                           |
+| `.venv/*`, `.svn/*`, `.git/*` | Local tool and version control files.                                                                              |
 | `wkube.py`                    | Dispatch file. It is not model code.                                                                               |
 
 `include="Model/t/a4_r1.g00"` puts that restart file back. The solve starts from `t/a4_r1.g00`. Do not include the rest of `Model/t`.
 
 `Data_Scen/`, `include/`, `Model/*.gms`, `Model/cplex.opt`, and the license file in the model root stay in the upload. Do not add an exclude that matches the license file. An extra exclude can remove a file the solve opens.
+
+## Windows / SVN file permissions
+
+On Windows working copies checked out from Subversion (SVN), files in `.svn/pristine/` or local files may have the `ReadOnly` attribute set. When `accli` scans or packages files, Python can raise:
+```text
+PermissionError: [WinError 5] Access is denied
+```
+
+To prevent this:
+1. Ensure `.svn/*` is always in `exclude`.
+2. Clear read-only attributes on all files in the model tree before dispatching:
+   ```powershell
+   Get-ChildItem -Path . -Recurse -Force | Where-Object { $_.IsReadOnly } | ForEach-Object { $_.IsReadOnly = $false }
+   ```
+
+## UTF-8 Byte Order Mark (BOM)
+
+When creating or editing scripts (`init.R`, `*.gms`, `*.sh`) on Windows using PowerShell (`Set-Content` or `Out-File`), default encodings often write a UTF-8 BOM (`\ufeff`). Linux interpreters (Bash, Rscript) fail to parse these files:
+```text
+Error: unexpected input in '\ufeff'
+```
+Always save files as ASCII or UTF-8 without BOM (`utf8NoBOM`).
 
 ## When the user changes an excluded file
 
