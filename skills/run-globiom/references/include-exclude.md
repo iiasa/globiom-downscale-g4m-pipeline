@@ -78,6 +78,8 @@ If the user chooses a different restart file, include that file. Use a GAMS vers
 
 ## Make the bundle smaller
 
+This is the main constraint on a dispatch. The filtered copy is uploaded to the jobstore on S3. A large copy is a large upload, even when some hashes are already stored. Read [upload.md](upload.md).
+
 Look through the model root before you write `exclude`. The required patterns above are the start, not the whole list. Propose more excludes for directories the chosen GAMS entry does not open.
 
 Look for backups, old outputs, logs, editor files, `.venv`, caches, and other large trees. Name each proposed pattern and why it is safe to omit.

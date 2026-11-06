@@ -53,3 +53,5 @@ Add `--source wkube` to hide the build noise. Add `--source celery` or `--source
 `--all` prints the whole log. The default is only the latest part. Use `--all` when the latest part does not show the build error. `--attempt N` selects an older attempt. The default is the latest attempt. `--no-time` hides the timestamp.
 
 Do not treat a holder log with no GAMS output as a successful solve. Check the child status and the mapped result path.
+
+A `TIMEOUT` or other finished failure does not need a new dispatch when the files are unchanged. Restart the stored job. Read [upload.md](upload.md).

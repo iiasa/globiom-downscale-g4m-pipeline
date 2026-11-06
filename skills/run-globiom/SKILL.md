@@ -19,6 +19,7 @@ Read these files before you write `wkube.py`:
 - [references/gams-image.md](references/gams-image.md)
 - [references/wkube-template.py](references/wkube-template.py)
 - [references/monitor.md](references/monitor.md)
+- [references/upload.md](references/upload.md)
 
 Fetch and read https://accelerator.iiasa.ac.at/docs/routine-jobflow before you write a jobflow. Use that page for the holder task, `add_child`, `add_callback`, and dispatch. The examples on that page use `PYTHON3_7`. Do not copy that stack. The GLOBIOM stack and filter rules in this skill override those examples.
 
@@ -147,7 +148,7 @@ Start from [references/wkube-template.py](references/wkube-template.py).
 
 - Put the file in the model root.
 - Set `job_folder` to the directory that contains `wkube.py`.
-- Keep the include and exclude strings from the template.
+- Start from the include and exclude strings in the template. Then look for more directories that the solve does not need. Propose those extra excludes before you write them. Wait for the user to accept or reject each one. Do not dispatch a filter the user has not confirmed. Read [references/upload.md](references/upload.md). The filtered copy is uploaded to S3.
 - Create one child task for each confirmed `nsim`. Pass that integer as `NSIM`.
 - **CRITICAL**: The root holder task **must have a name**, e.g.:
   ```python
@@ -157,7 +158,15 @@ Start from [references/wkube-template.py](references/wkube-template.py).
 - Specify required resource and timeout arguments on every child task (`timeout=12 * 60 * 60`, `build_timeout=24 * 60 * 60`). Use a `build_timeout` of 1 day or more for expensive jobs.
 - The root variable must be named `globiom`.
 
-Do not import `wkube.py` to test it. The import uploads the tree.
+Read [references/upload.md](references/upload.md) before you dispatch. Importing `wkube.py` uploads the filtered `job_folder` to S3. Do not import it to test it. Do not dispatch while the user is still editing. A half-written file is what gets stored.
+
+If a previous job already ran this `wkube.py` and the files have not changed, do not dispatch again. Restart that job:
+
+```bash
+accli job PROJECT_SLUG JOB_ID restart
+```
+
+Use the root id or the child id. A timeout is a restart, not a new upload.
 
 ## 10. Confirm, then dispatch
 
@@ -170,6 +179,8 @@ Show the user this summary before dispatch:
 - `nsim` list
 - result path in the project space
 - files they edited, and whether each file is uploaded
+- exclude patterns, including any extra directories they accepted
+- size of the filtered upload, and the largest directories still included
 - project slug
 - resource requests per scenario (1 core, 24 GiB RAM, 12 GiB local storage)
 
@@ -182,7 +193,7 @@ If this `wkube.py` has not yet produced a successful run, test with one scenario
 2. Run `accli logs PROJECT_SLUG CHILD_JOB_ID --follow` to watch live solver output.
 3. If the child fails before starting, check holder events with `--source celery` and `--source podevents`.
 
-Once verified, dispatch the full confirmed scenario list.
+Once verified, dispatch the full confirmed scenario list. Do not rewrite `wkube.py` for that dispatch. A later timeout or finished failure, with the same files, is `accli job PROJECT_SLUG JOB_ID restart`. It is not another upload.
 
 ## 12. Merge Scenario Results
 
