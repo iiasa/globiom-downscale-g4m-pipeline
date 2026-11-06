@@ -37,9 +37,9 @@ Both `timeout` and `build_timeout` are required fields on `WKubeTask`. Omitting 
 
 ## Cluster capacity and timeouts
 
-The IIASA Accelerator cluster has approximately **500 GiB total allocatable worker RAM**.
+The IIASA Accelerator cluster has approximately **750 GiB total allocatable worker RAM**.
 
-- **Maximum concurrent tasks**: At 24 GiB RAM per scenario, the cluster can run roughly **20–21 tasks simultaneously** ($21 \times 24\text{ GiB} \approx 504\text{ GiB}$).
+- **Maximum concurrent tasks**: At 24 GiB RAM per scenario, the cluster can run roughly **31 tasks simultaneously** ($31 \times 24\text{ GiB} = 744\text{ GiB}$).
 - Extra tasks wait in Kubernetes `Pending`. They fail with `PREPARING_TIMEOUT` if `build_timeout` is too short:
   ```text
   GLOBIOM nsim X (Job #...) — ERROR (PREPARING_TIMEOUT)

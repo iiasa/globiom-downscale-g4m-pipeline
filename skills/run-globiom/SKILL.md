@@ -89,7 +89,7 @@ Use the `nsim` values the user names. Do not add a scenario they did not name.
 
 You may read the active `SCEN_MAP` in `Model/6_scenarios.gms` to suggest an integer. Ignore a commented map. If `lookup` is not 0, read the included map file instead. Show the suggestion. Wait for the user to confirm it.
 
-The Accelerator cluster has approximately **500 GiB worker RAM**. Each scenario requests 24 GiB RAM, so about **20–21 tasks** run at once and the rest wait in `Pending`. Do not split scenarios into separate batch files. Set a long `build_timeout` (1 day or more) when dispatching so queued tasks are not killed with `PREPARING_TIMEOUT` while they wait for capacity. Dispatch the full confirmed `nsim` list in a single `wkube.py`.
+The Accelerator cluster has approximately **750 GiB worker RAM**. Each scenario requests 24 GiB RAM, so about **31 tasks** run at once and the rest wait in `Pending`. Do not split scenarios into separate batch files. Set a long `build_timeout` (1 day or more) when dispatching so queued tasks are not killed with `PREPARING_TIMEOUT` while they wait for capacity. Dispatch the full confirmed `nsim` list in a single `wkube.py`.
 
 ## 5. Edit the model first
 
