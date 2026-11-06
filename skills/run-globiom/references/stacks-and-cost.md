@@ -29,27 +29,20 @@ Keep this budget for each scenario:
 | `required_storage_local`    | `12 * 1024**3` | bytes   |
 | `required_storage_workflow` | `1 * 1024**3`  | bytes   |
 | `timeout`                   | `12 * 60 * 60` | seconds |
-| `build_timeout`             | `2 * 60 * 60`  | seconds |
+| `build_timeout`             | `24 * 60 * 60` | seconds |
 
 Pass bytes and seconds. The integer `24` is not 24 GiB.
 
 Both `timeout` and `build_timeout` are required fields on `WKubeTask`. Omitting them causes Pydantic validation errors.
 
-## Cluster capacity and batch sizing
+## Cluster capacity and timeouts
 
 The IIASA Accelerator cluster has approximately **500 GiB total allocatable worker RAM**.
 
 - **Maximum concurrent tasks**: At 24 GiB RAM per scenario, the cluster can run roughly **20–21 tasks simultaneously** ($21 \times 24\text{ GiB} \approx 504\text{ GiB}$).
-- **Queue timeout (`PREPARING_TIMEOUT`)**: Any scenario task beyond the 21st is queued in Kubernetes `Pending` state. The Accelerator enforces a scheduling timeout of **~2.5 hours** on pending tasks.
-- **The Pitfall**: Because each GLOBIOM scenario solve typically runs for 2.5 to 3 hours, queued tasks in `Pending` will exceed the 2.5-hour limit and fail with:
+- Extra tasks wait in Kubernetes `Pending`. They fail with `PREPARING_TIMEOUT` if `build_timeout` is too short:
   ```text
   GLOBIOM nsim X (Job #...) — ERROR (PREPARING_TIMEOUT)
   ```
 
-### Batching rules:
-1. **Never submit more than 20 tasks in a single job** if scenario solve times exceed 2 hours.
-2. For large sets (e.g. 34 scenarios):
-   - **Batch 1**: Dispatch scenarios 1–20 (e.g., `wkube.py`).
-   - Monitor Batch 1 until complete.
-   - **Batch 2**: Dispatch remaining scenarios 21–34 (e.g., `wkube_batch2.py`).
-3. This guarantees all tasks get scheduled immediately without languishing in `Pending` and hitting `PREPARING_TIMEOUT`.
+Do not split a large scenario set into separate batch files. Set a long `build_timeout` (1 day or more) for expensive jobs so queued tasks stay alive until capacity is free. Dispatch the full confirmed scenario list in a single `wkube.py`.

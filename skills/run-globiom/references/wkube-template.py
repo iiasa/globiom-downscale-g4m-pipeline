@@ -55,7 +55,7 @@ def build_task(nsim: int) -> WKubeTask:
         required_storage_local=12 * 1024**3,
         required_storage_workflow=1 * 1024**3,
         timeout=12 * 60 * 60,
-        build_timeout=2 * 60 * 60,
+        build_timeout=24 * 60 * 60,
         conf={
             "NSIM": str(nsim),
             "output_mappings": (
@@ -67,8 +67,8 @@ def build_task(nsim: int) -> WKubeTask:
 
 
 # Replace this tuple with the nsim values the user confirmed.
-# BATCHING ADVICE: If scheduling >20 scenarios (at 24 GiB RAM each),
-# batch them into <= 20 tasks per dispatch to avoid cluster PREPARING_TIMEOUT (~2.5h).
+# Use a long build_timeout (1 day or more) for expensive jobs so queued
+# tasks are not killed while waiting for cluster capacity. Do not batch.
 NSIMS = (0,)
 
 # IMPORTANT: The root holder task requires a non-empty name (e.g. name="GLOBIOM Run"),

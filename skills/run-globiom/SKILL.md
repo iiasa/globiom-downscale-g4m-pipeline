@@ -35,9 +35,9 @@ Do not infer the root from a directory name or a Git branch. Do not search the h
 3. If more than one root is plausible, ask which root to use.
 4. If you cannot find the root, ask for the path. Stop.
 
-Write `wkube.py` in that model root. `accli dispatch` reads `./wkube.py` from the directory where you run it. Do not pass `-f` unless using a secondary batch file (e.g. `wkube_batch2.py`). Do not put `wkube.py` in a parent directory.
+Write `wkube.py` in that model root. `accli dispatch` reads `./wkube.py` from the directory where you run it. Do not pass `-f`. Do not put `wkube.py` in a parent directory.
 
-If `wkube.py` already exists in the model root, edit that file. Do not create a second workflow file unless batching requires it.
+If `wkube.py` already exists in the model root, edit that file. Do not create a second workflow file.
 
 ## 2. Prepare the environment
 
@@ -83,24 +83,13 @@ In PowerShell:
 - If `52.5`: You may use the built-in stack `base_stack="GAMS52_5__R4_6"`.
 - If `53.3` (or other non-52.5 version): You **MUST** use a custom `Dockerfile` targeting that exact GAMS version (see [references/gams-image.md](references/gams-image.md)).
 
-## 4. Scenarios & Cluster Capacity Limits
+## 4. Scenarios
 
 Use the `nsim` values the user names. Do not add a scenario they did not name.
 
 You may read the active `SCEN_MAP` in `Model/6_scenarios.gms` to suggest an integer. Ignore a commented map. If `lookup` is not 0, read the included map file instead. Show the suggestion. Wait for the user to confirm it.
 
-### Batching for Cluster Capacity
-The Accelerator cluster has approximately **500 GiB worker RAM**.
-- Each scenario requests 24 GiB RAM. The cluster can run at most **20–21 tasks concurrently**.
-- Kubernetes puts excess tasks in `Pending` status. Tasks in `Pending` for **> 2.5 hours** are killed with `PREPARING_TIMEOUT`.
-- Because GLOBIOM scenario solves take ~2.5–3 hours, **never dispatch more than 20 tasks in a single job**.
-- If running $> 20$ scenarios (e.g. 34 scenarios):
-  1. Create `wkube.py` for Batch 1 (scenarios 1–20) and dispatch it.
-  2. Create `wkube_batch2.py` for Batch 2 (scenarios 21–34).
-  3. Once Batch 1 finishes, dispatch Batch 2:
-     ```bash
-     accli dispatch PROJECT_SLUG globiom -f wkube_batch2.py
-     ```
+The Accelerator cluster has approximately **500 GiB worker RAM**. Each scenario requests 24 GiB RAM, so about **20–21 tasks** run at once and the rest wait in `Pending`. Do not split scenarios into separate batch files. Set a long `build_timeout` (1 day or more) when dispatching so queued tasks are not killed with `PREPARING_TIMEOUT` while they wait for capacity. Dispatch the full confirmed `nsim` list in a single `wkube.py`.
 
 ## 5. Edit the model first
 
@@ -165,7 +154,7 @@ Start from [references/wkube-template.py](references/wkube-template.py).
   globiom = WKubeTask(name="GLOBIOM Run")
   ```
   Calling `WKubeTask()` without a `name` will fail Pydantic validation (`ValidationError: name`).
-- Specify required resource and timeout arguments on every child task (`timeout=12 * 60 * 60`, `build_timeout=2 * 60 * 60`).
+- Specify required resource and timeout arguments on every child task (`timeout=12 * 60 * 60`, `build_timeout=24 * 60 * 60`). Use a `build_timeout` of 1 day or more for expensive jobs.
 - The root variable must be named `globiom`.
 
 Do not import `wkube.py` to test it. The import uploads the tree.
@@ -178,7 +167,7 @@ Show the user this summary before dispatch:
 - GAMS choice: base stack or Dockerfile version
 - license file name under `/code/`
 - GAMS entry file (with restart file `r=t/a4_r1` if applicable)
-- `nsim` list (and batching plan if $> 20$ scenarios)
+- `nsim` list
 - result path in the project space
 - files they edited, and whether each file is uploaded
 - project slug
@@ -219,6 +208,6 @@ gdxdump merged_results.gdx symbols
 | `Gams Exit Msg = New Workfile (Exit code 5)` | Checkpoint was created by a different GAMS version than the container | Check `a4_r1.g00` header and use matching Dockerfile (e.g. 53.3) |
 | `gams: not found` (Exit 127) | PATH missing or non-root user lacks execute permission | Symlink `/usr/local/bin/gams`, add `chmod -R 755 /opt/gams` in Dockerfile |
 | `curl: not found` during build | Minimal base image lacks curl/ca-certificates | Add `apt-get install -y curl ca-certificates` to Dockerfile |
-| `PREPARING_TIMEOUT` | Cluster RAM full (>20 tasks); pending pods time out after 2.5h | Limit batches to $\le 20$ scenarios at a time |
+| `PREPARING_TIMEOUT` | Cluster RAM full; pending pods wait for capacity | Set a long `build_timeout` (1 day or more); do not batch |
 | `No files found matching remote prefix` | WKube prefixes output paths with `job-outputs/<id>/<slug>/` | Add `job-outputs/<job_id>/<slug>/` to `accli copy` remote path |
 | `No root task variable found with name 'wkube.py:globiom'` | Passed filename to `accli dispatch` task parameter | Use `accli dispatch <slug> globiom [-f <file>.py]` |
