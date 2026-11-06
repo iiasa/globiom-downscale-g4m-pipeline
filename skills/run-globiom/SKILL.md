@@ -24,7 +24,7 @@ Fetch and read https://accelerator.iiasa.ac.at/docs/routine-jobflow before you w
 
 Fetch and read https://accelerator.iiasa.ac.at/docs/routine-data-mappings before you set `input_mappings` or `output_mappings`. If that page does not answer the mapping question, fetch https://accelerator.iiasa.ac.at/docs/routine-introduction.
 
-## Find the model root
+## 1. Find the model root
 
 The model root is the directory that contains both `Model/6_scenarios.gms` and `Model/t/a4_r1.g00`.
 
@@ -39,7 +39,7 @@ Write `wkube.py` in that model root. `accli dispatch` reads `./wkube.py` from th
 
 If `wkube.py` already exists in the model root, edit that file. Do not create a second workflow file.
 
-## Prepare the environment
+## 2. Prepare the environment
 
 1. Check that `accli` is on `PATH`.
 2. If `accli` is missing, install it with the official command for that operating system. Linux and macOS:
@@ -57,23 +57,41 @@ irm https://raw.githubusercontent.com/iiasa/accli/master/scripts/install.ps1 | i
 3. A token file at `~/.accli/data.json` means the user has logged in. If the file is missing, ask the user to run `accli login`. The user must open `https://accelerator.iiasa.ac.at/acli-auth-code` and enter the code. Do not complete login for the user. Do not print the token.
 4. Ask for the Accelerator project slug if the user did not give one. The slug is the path segment after `/projects/` on `https://accelerator.iiasa.ac.at`. Do not guess the slug. The default GLOBIOM slug is `globiom-scenario`.
 
-The base stack runs `/code/init.R` during the image build. If the user keeps the base stack and the model root has no `init.R`, create a file that contains only a comment. Do not replace an existing `init.R`. Do not add R packages unless the user asks for those packages. A custom Dockerfile does not use `init.R`.
+### Windows & SVN Permissions Check
+On Windows SVN working copies, pristine files or local files may carry read-only attributes, causing `PermissionError: [WinError 5] Access is denied` during file packaging. Run this in PowerShell before dispatch:
 
-## Scenarios
+```powershell
+Get-ChildItem -Path . -Recurse -Force | Where-Object { $_.IsReadOnly } | ForEach-Object { $_.IsReadOnly = $false }
+```
+
+### Prevent UTF-8 BOM
+Ensure any created or edited script (`init.R`, `*.gms`, `*.sh`) is saved without a UTF-8 Byte Order Mark (`utf8NoBOM`). A BOM will cause Linux bash/Rscript to crash with `unexpected input in '\ufeff'`.
+
+## 3. Verify Checkpoint Version Compatibility
+
+GAMS restart workfiles (`.g00`) can only be opened by the same major/minor GAMS version that created them. Loading a newer checkpoint in an older GAMS version causes `*** Gams Exit Msg = New Workfile (Exit code 5)`.
+
+Inspect the first bytes of `Model/t/a4_r1.g00`:
+- `WEX533-533` -> GAMS 53.3
+- `LEX525-525` -> GAMS 52.5
+
+In PowerShell:
+```powershell
+(Get-Content -Path "Model/t/a4_r1.g00" -Encoding Byte -TotalCount 100 | ForEach-Object { [char]$_ }) -join ""
+```
+
+- If `52.5`: You may use the built-in stack `base_stack="GAMS52_5__R4_6"`.
+- If `53.3` (or other non-52.5 version): You **MUST** use a custom `Dockerfile` targeting that exact GAMS version (see [references/gams-image.md](references/gams-image.md)).
+
+## 4. Scenarios
 
 Use the `nsim` values the user names. Do not add a scenario they did not name.
 
-Ask only to clarify:
-
-- The user names no `nsim`.
-- The user names a scenario, but not an integer.
-- Two statements disagree.
-
 You may read the active `SCEN_MAP` in `Model/6_scenarios.gms` to suggest an integer. Ignore a commented map. If `lookup` is not 0, read the included map file instead. Show the suggestion. Wait for the user to confirm it.
 
-Do not start from a stock scenario list. The user's `SCEN_MAP` is the list that matters.
+The Accelerator cluster has approximately **750 GiB worker RAM**. Each scenario requests 24 GiB RAM, so about **31 tasks** run at once and the rest wait in `Pending`. Do not split scenarios into separate batch files. Set a long `build_timeout` (1 day or more) when dispatching so queued tasks are not killed with `PREPARING_TIMEOUT` while they wait for capacity. Dispatch the full confirmed `nsim` list in a single `wkube.py`.
 
-## Edit the model first
+## 5. Edit the model first
 
 The uploaded tree is the model that runs. Edit `Model/*.gms`, `cplex.opt`, `Data_Scen/`, and `include/` when the user asks.
 
@@ -81,115 +99,115 @@ After an edit, compare the changed paths with the include and exclude rules. If 
 
 `wkube.py` is not model code. The dispatcher removes it from the upload. An edit to `wkube.py` changes the job definition only.
 
-## Choose GAMS and the license
+## 6. Choose GAMS and the license
 
-Ask whether the user wants the base stack or their own GAMS version.
+- **Base stack**: Use `base_stack="GAMS52_5__R4_6"` ONLY if the checkpoint is GAMS 52.5. Read [references/stacks-and-cost.md](references/stacks-and-cost.md).
+- **Custom version**: Set `docker_filename="Dockerfile"`, remove `base_stack`, and write `Dockerfile` matching the checkpoint version. Read [references/gams-image.md](references/gams-image.md).
 
-- Base stack: use `base_stack="GAMS52_5__R4_6"`. Do not substitute another stack. Read [references/stacks-and-cost.md](references/stacks-and-cost.md).
-- Own version: do not set `base_stack`. Set `docker_filename="Dockerfile"`. Guide the user through the image in [references/gams-image.md](references/gams-image.md). Use the GAMS version they name.
-
-In both cases, keep their license file in the model root. That directory is `job_folder`. The container then has the file at `/code/<filename>`. Point the parent `gams` command at that path with `license=/code/<filename>`. Also pass `//extra_parameters=license=/code/<filename>`. `execute_abort` children do not inherit `license=`. They open `/opt/gams/gams52.5_linux_x64_64_sfx/gamslice.txt`, the image license. The job user cannot replace that file. `%env%` in `include/environment.gms` appends `extra_parameters`, so the child command gets the user license. Do not exclude the license file. Do not print it. Do not point the command at `/mnt/wdrv/gamslice.txt` unless that is the file they named and it is also copied into the model root.
+Keep the license file in the model root. That directory is `job_folder`. The container then has the file at `/code/<filename>`. Point every `gams` command at that path with `license=/code/<filename>` and `//extra_parameters=license=/code/<filename>`. Child `execute_abort` jobs do not inherit `license=`. They open the image `gamslice.txt` under `/opt/gams`. Do not exclude the license file. Do not print it.
 
 If the license file is not in the model root, ask the user to put it there. Stop until the file is there.
 
-## Choose the GAMS entry
+## 7. Choose the GAMS entry
 
-Ask which program the command should run. Do not pick for them.
+Ask which program the command should run. Look for `Model/0_executebatch.gms`, `Model/6_scenarios.gms`, or `Model/7_output.gms`.
 
-Look for `Model/0_executebatch.gms` and `Model/0_execute_batch.gms`. If either file exists, offer it. Also offer:
+When running `6_scenarios.gms`:
+- Specify restart checkpoint: `r=t/a4_r1`.
+- Ensure output is copied to a uniquely named GDX file so results are not overwritten:
+  ```bash
+  cp -a gdx/output.gdx "/code/results/${NSIM}/${NSIM}.gdx" || true
+  cp -a gdx/. "/code/results/${NSIM}/" || true
+  ```
 
-- only step 6, `Model/6_scenarios.gms`
-- only step 7, `Model/7_output.gms`
+## 8. Map and Retrieve Results
 
-Use the file they choose. If they choose step 7 alone, ask which restart file to open. Include that restart file. Do not also run step 6, step 8, or a batch file unless they ask for that sequence.
-
-## Map the results
-
-Do not invent an output directory. Read `Model/` before you set `output_mappings`.
-
-1. Open the entry file the user chose.
-2. Follow every uncommented `execute` or `execute_abort` into the stage file it runs. Also open the includes that write files, such as `7_output.gms` and `8_merge_output.gms` when that stage runs.
-3. Record each path the stage writes. Look for `-s`, `gdx=`, `outpath`, `output_name`, `put`, and `EXECUTE_UNLOAD`.
-4. The command runs from `Model/`. A relative path in those files is `/code/Model/<path>` in the container.
-5. Map each written directory to `/mnt/wdrv/globiom-results/RUN_LABEL/<nsim>/` and keep the same relative directory. Both sides of a folder mapping end with `/`. Separate mappings with `;`.
-6. Do not copy outputs into `/code/results` and map that copy. Do not use `acc://` in `output_mappings`. An `acc://` mapping only stores the job-output location. The user browses `/mnt/wdrv`.
-7. In the summary before dispatch, list each path you found and the mapping for it. If you cannot name a written path, say so. Do not guess a folder.
-
-The left side below is an example shape. Replace it with a path you read from `Model/`. Do not keep it if the model does not write that path.
+### Output Mappings in `wkube.py`
+Write job outputs under `/code/results/<nsim>/` and map that directory to the project space:
 
 ```python
-"output_mappings": "/code/Model/gdx/:/mnt/wdrv/globiom-results/RUN_LABEL/8/gdx/"
+"output_mappings": f"/code/results/{nsim}/:acc://globiom-scenario/globiom-results/RUN_LABEL/{nsim}/"
 ```
 
-Replace the run label and `nsim` with the confirmed values. Use a literal path. Do not expect `${ROOT_JOB_ID}` to expand inside `output_mappings`.
+### Storage Layout and `accli copy`
+When WKube uploads mapped outputs to S3/MinIO, it automatically prefixes the path with:
+`acc://<PROJECT_SLUG>/job-outputs/<ROOT_JOB_ID>/<PROJECT_SLUG>/...`
 
-Before dispatch, tell the user where to open the results:
+To copy scenario results back to your local machine, query the root job ID (e.g. `15966`) and run:
 
-- Web UI: `https://accelerator.iiasa.ac.at/projects/PROJECT_SLUG`, then `globiom-results/RUN_LABEL/<nsim>/`
-- In a job: `/mnt/wdrv/globiom-results/RUN_LABEL/<nsim>/`
-- Copy: `accli copy acc://PROJECT_SLUG/globiom-results/RUN_LABEL/<nsim>/ ./results/`
+```powershell
+accli copy acc://PROJECT_SLUG/job-outputs/<ROOT_JOB_ID>/PROJECT_SLUG/globiom-results/RUN_LABEL/ ./results/
+```
 
-## Write wkube.py
+*Note*: Attempting to copy directly from `acc://PROJECT_SLUG/globiom-results/...` without the `job-outputs/<ROOT_JOB_ID>/PROJECT_SLUG/` prefix will return `No files found matching the remote prefix`.
+
+## 9. Write wkube.py
 
 Start from [references/wkube-template.py](references/wkube-template.py).
 
 - Put the file in the model root.
 - Set `job_folder` to the directory that contains `wkube.py`.
-- Start from the include and exclude strings in the template. Then look for more directories that the solve does not need. Propose those extra excludes before you write them. Wait for the user to accept or reject each one. Do not dispatch a filter the user has not confirmed.
+- Keep the include and exclude strings from the template.
 - Create one child task for each confirmed `nsim`. Pass that integer as `NSIM`.
-- The root variable must be named `globiom`. The dispatch command uses that name.
-- The holder is `WKubeTask()` with no arguments, as the jobflow page requires. `add_child` works only on that holder.
-- Keep the resource values in the template unless the user asks to change them.
-- Set `output_mappings` on every child from the paths you read in `Model/`. Map those directories. Do not copy them to another folder first.
+- **CRITICAL**: The root holder task **must have a name**, e.g.:
+  ```python
+  globiom = WKubeTask(name="GLOBIOM Run")
+  ```
+  Calling `WKubeTask()` without a `name` will fail Pydantic validation (`ValidationError: name`).
+- Specify required resource and timeout arguments on every child task (`timeout=12 * 60 * 60`, `build_timeout=24 * 60 * 60`). Use a `build_timeout` of 1 day or more for expensive jobs.
+- The root variable must be named `globiom`.
 
 Do not import `wkube.py` to test it. The import uploads the tree.
 
-## Confirm, then dispatch
+## 10. Confirm, then dispatch
 
 Show the user this summary before dispatch:
 
 - model root
 - GAMS choice: base stack or Dockerfile version
 - license file name under `/code/`
-- GAMS entry file
+- GAMS entry file (with restart file `r=t/a4_r1` if applicable)
 - `nsim` list
 - result path in the project space
 - files they edited, and whether each file is uploaded
-- exclude patterns, including any extra directories they accepted
 - project slug
-- one line that each scenario requests 1 core, 24 GiB of memory, and 12 GiB of local disk
+- resource requests per scenario (1 core, 24 GiB RAM, 12 GiB local storage)
 
-If the list has more than four scenarios, state that the jobs can run in parallel and that each job uses one shared GAMS seat. Wait for confirmation.
+Wait for user confirmation.
 
-## First run
+## 11. First run & Monitoring
 
-If this `wkube.py` has not yet produced a GLOBIOM job that writes its mapped outputs, say so before dispatch. Tell the user all of this:
+If this `wkube.py` has not yet produced a successful run, test with one scenario first and follow [references/monitor.md](references/monitor.md):
+1. Run `accli job PROJECT_SLUG ROOT_JOB_ID` to inspect child tasks.
+2. Run `accli logs PROJECT_SLUG CHILD_JOB_ID --follow` to watch live solver output.
+3. If the child fails before starting, check holder events with `--source celery` and `--source podevents`.
 
-- The first dispatch is one test scenario, not the full list.
-- You will watch that job with `accli jobs`, `accli job`, and `accli logs`.
-- You are checking for image build errors and scaffolding errors.
-- After that job writes its mapped outputs, you will keep `wkube.py` stable.
+Once verified, dispatch the full confirmed scenario list.
 
-Ask which one `nsim` to use for the test when they named more than one. Do not dispatch the other scenarios until the test job builds and writes its mapped outputs.
+## 12. Merge Scenario Results
 
-Run the command from the model root:
+Once all scenarios complete and results are downloaded locally, merge the individual scenario GDX files into a unified dataset:
 
-```bash
-accli dispatch PROJECT_SLUG globiom
+```powershell
+# Using GAMS gdxmerge
+gdxmerge *.gdx id=OUTPUT,OUTPUT_AG output=merged_results.gdx
 ```
 
-Replace `PROJECT_SLUG` with the confirmed slug. Do not add `-f`.
+Verify the merged dataset:
+```powershell
+gdxdump merged_results.gdx symbols
+```
 
-Then follow [references/monitor.md](references/monitor.md).
+## 13. Troubleshooting & Common Errors
 
-1. Run `accli job PROJECT_SLUG ROOT_JOB_ID` and read the child id. The dispatch id is the holder. It does not contain the GAMS log.
-2. Run `accli logs PROJECT_SLUG CHILD_JOB_ID --follow`.
-3. If the child never starts, read the holder log with `--source celery` and `--source podevents`.
-
-Read the log for a failed image build, a missing file, a license error, or a missing `gams` command. If you find one, tell the user the cause and the change you propose. Dispatch the test again only after they confirm that change.
-
-Do not call the test reliable because the holder status is `DONE`. The child must finish, and the mapped result path must contain the output. Use `accli jobs PROJECT_SLUG --status done` to confirm the graph, then check that path.
-
-When the test job writes the mapped outputs, tell the user the result path. After that, this `wkube.py` is stable. Do not rewrite the command, stack, mappings, or filters for a later scenario unless the user asks, or a later run shows that the file is wrong.
-
-If this `wkube.py` already produced mapped outputs, do not run another test scenario. Dispatch the confirmed list. Keep the stable file. Change it only for the reason above.
+| Error | Root Cause | Solution |
+| --- | --- | --- |
+| `ValidationError: name` | Root `globiom = WKubeTask()` missing `name` | Set `globiom = WKubeTask(name="GLOBIOM Run")` |
+| `PermissionError: [WinError 5]` | Windows SVN pristine files marked `ReadOnly` | Run PowerShell command to set `IsReadOnly = $false` on all files |
+| `unexpected input in '\ufeff'` | File saved with UTF-8 BOM on Windows | Save `init.R`, `*.gms`, `*.sh` as UTF-8 without BOM (`utf8NoBOM`) |
+| `Gams Exit Msg = New Workfile (Exit code 5)` | Checkpoint was created by a different GAMS version than the container | Check `a4_r1.g00` header and use matching Dockerfile (e.g. 53.3) |
+| `gams: not found` (Exit 127) | PATH missing or non-root user lacks execute permission | Symlink `/usr/local/bin/gams`, add `chmod -R 755 /opt/gams` in Dockerfile |
+| `curl: not found` during build | Minimal base image lacks curl/ca-certificates | Add `apt-get install -y curl ca-certificates` to Dockerfile |
+| `PREPARING_TIMEOUT` | Cluster RAM full; pending pods wait for capacity | Set a long `build_timeout` (1 day or more); do not batch |
+| `No files found matching remote prefix` | WKube prefixes output paths with `job-outputs/<id>/<slug>/` | Add `job-outputs/<job_id>/<slug>/` to `accli copy` remote path |
+| `No root task variable found with name 'wkube.py:globiom'` | Passed filename to `accli dispatch` task parameter | Use `accli dispatch <slug> globiom [-f <file>.py]` |

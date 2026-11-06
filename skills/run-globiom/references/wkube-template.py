@@ -16,20 +16,27 @@ GAMS_ARGS = (
 
 # Replace ENTRY with the file the user chose:
 # their 0_executebatch.gms or 0_execute_batch.gms, 6_scenarios.gms, or 7_output.gms.
-# Step 7 alone needs the restart file they named.
+# Note: 6_scenarios.gms typically restarts from stage 4 restart (e.g. r=t/a4_r1).
 ENTRY = "6_scenarios.gms"
-# Do not copy outputs to /code/results. Read Model/ and map the directories
-# the entry writes. See SKILL.md, "Map the results".
 COMMAND = "\n".join(
     [
         "set -eu",
-        "mkdir -p Model/gdx",
+        'mkdir -p "/code/results/${NSIM}" Model/gdx',
         "cd Model",
-        f"gams {ENTRY} {GAMS_ARGS} //nsim=\"$NSIM\"",
+        (
+            f"gams {ENTRY} r=t/a4_r1 {GAMS_ARGS} "
+            'o="/code/results/${NSIM}/${ENTRY%.gms}.lst" '
+            '//nsim="$NSIM"'
+        ),
+        'cp -a gdx/output.gdx "/code/results/${NSIM}/${NSIM}.gdx" || true',
+        'cp -a gdx/. "/code/results/${NSIM}/" || true',
     ]
 )
 
-EXCLUDE = "Data/*,Model.bk/*,Model/t/*,Model/gdx/*,.venv/*,.svn/*,.git/*,wkube.py"
+EXCLUDE = (
+    "Data/*,Model.bk/*,Model/t/*,Model/gdx/*,Model/output/*,"
+    "temp/*,.venv/*,.svn/*,.git/*,wkube.py"
+)
 INCLUDE = "Model/t/a4_r1.g00"
 
 
@@ -39,6 +46,7 @@ def build_task(nsim: int) -> WKubeTask:
         job_folder=str(MODEL_ROOT),
         exclude=EXCLUDE,
         include=INCLUDE,
+        # Base stack: base_stack="GAMS52_5__R4_6" (only if checkpoint matches GAMS 52.5).
         # Own GAMS version: delete base_stack and set docker_filename="Dockerfile".
         base_stack="GAMS52_5__R4_6",
         command=COMMAND,
@@ -47,21 +55,24 @@ def build_task(nsim: int) -> WKubeTask:
         required_storage_local=12 * 1024**3,
         required_storage_workflow=1 * 1024**3,
         timeout=12 * 60 * 60,
-        build_timeout=2 * 60 * 60,
+        build_timeout=24 * 60 * 60,
         conf={
             "NSIM": str(nsim),
-            # Replace the left side with a directory you read from Model/.
             "output_mappings": (
-                "/code/Model/REPLACE_AFTER_READING_MODEL/:"
-                f"/mnt/wdrv/globiom-results/RUN_LABEL/{nsim}/REPLACE_AFTER_READING_MODEL/"
+                f"/code/results/{nsim}/:"
+                f"acc://globiom-scenario/globiom-results/RUN_LABEL/{nsim}/"
             ),
         },
     )
 
 
 # Replace this tuple with the nsim values the user confirmed.
+# Use a long build_timeout (1 day or more) for expensive jobs so queued
+# tasks are not killed while waiting for cluster capacity. Do not batch.
 NSIMS = (0,)
 
-globiom = WKubeTask()
+# IMPORTANT: The root holder task requires a non-empty name (e.g. name="GLOBIOM Run"),
+# otherwise Pydantic validation fails with "ValidationError: name".
+globiom = WKubeTask(name="GLOBIOM Run")
 for nsim in NSIMS:
     globiom.add_child(build_task(nsim))
