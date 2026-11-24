@@ -6,7 +6,7 @@ A pattern matches the relative path or the file name. In Python, `*` matches `/`
 
 `.git` directories are never copied.
 
-After the copy, the dispatcher deletes `wkube.py` from the upload. Exclude it anyway so the rule is visible.
+
 
 ## How the two lists combine
 
@@ -21,7 +21,7 @@ Use both lists for GLOBIOM. Their combination is not a whitelist.
 
 An excluded directory is not entered when `include` is unset. When `include` is set, the copier still enters that directory to find exceptions. This is why `exclude` can contain `Model/t/*` and `include` can still copy `Model/t/a4_r1.g00`.
 
-An empty match does not raise an error. A wrong `include` pattern omits the restart file silently. Before dispatch, check that `Model/t/a4_r1.g00` exists and that the include pattern matches that relative path.
+Before dispatch, check that `Model/t/a4_r1.g00` exists and that the include pattern matches that relative path.
 
 ## Required GLOBIOM filter
 
@@ -40,11 +40,10 @@ Keep every pattern. Use the same pair on every child task. The upload is cached 
 | `Model/output/*`              | Existing scenario results from local runs. Do not upload previous outputs.                                         |
 | `temp/*`                      | Temporary scratch files.                                                                                           |
 | `.venv/*`, `.svn/*`, `.git/*` | Local tool and version control files.                                                                              |
-| `wkube.py`                    | Dispatch file. It is not model code.                                                                               |
 
 `include="Model/t/a4_r1.g00"` puts that restart file back. The solve starts from `t/a4_r1.g00`. Do not include the rest of `Model/t`.
 
-`Data_Scen/`, `include/`, `Model/*.gms`, `Model/cplex.opt`, and the license file in the model root stay in the upload. Do not add an exclude that matches the license file. An extra exclude can remove a file the solve opens.
+
 
 ## Windows / SVN file permissions
 
